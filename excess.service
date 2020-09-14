@@ -1,0 +1,5 @@
+[Unit]
+Description=Loader of excess death data to DB
+
+[Service]
+ExecStart=/usr/bin/docker run --name excess excess:1.0
