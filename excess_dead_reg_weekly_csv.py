@@ -5,38 +5,65 @@ Created on Fri Jun  5 13:30:08 2020
 @author: pmaldonadol
 """
 
-import requests
 import pandas as pd
-import io
 import numpy as np
 
-
-      
-# Se obtienen las defunciones desde url y se transforman a dataframe
-defun = requests.get('https://github.com/MinCiencia/Datos-COVID19/raw/master/output/producto32/Defunciones_std.csv').content
-defun = pd.read_csv(io.StringIO(defun.decode('utf-8')))
-
 # Se obtienen las defunciones desde url y se transforman a dataframe
 
-defun_covid = requests.get('https://raw.githubusercontent.com/MinCiencia/Datos-COVID19/master/output/producto50/DefuncionesDEISPorComuna_std.csv').content
-defun_covid = pd.read_csv(io.StringIO(defun_covid.decode('utf-8')))
+reg_info=pd.read_json('http://192.168.2.223:5006/getStates', orient='columns')
+defun_data=pd.read_json('http://192.168.2.223:5006/getAllDeathsAllStates', orient='slit')
 
-defun_covid=defun_covid.groupby(by=['Codigo region','Region','Fecha']).sum()
-defun_covid=defun_covid.drop(['Codigo comuna', 'Poblacion'],axis=1)
-defun_covid.reset_index(level=0, inplace=True)
-defun_covid.reset_index(level=0, inplace=True)
-defun_covid.reset_index(level=0, inplace=True)
+for i in range(len(defun_data)):
+    if i==0: 
+        defun=pd.DataFrame(defun_data.iloc[i].values[0])
+        defun['Codigo region']=i+1
+        reg=reg_info.description[reg_info.id==i+1].values[0]
+        defun['Region']=reg
+    else:
+        defun_tmp=pd.DataFrame(defun_data.iloc[i].values[0])
+        defun_tmp['Codigo region']=i+1
+        reg=reg_info.description[reg_info.id==i+1].values[0]
+        defun_tmp['Region']=reg
+        defun=defun.append(defun_tmp)
+
+defun['Fecha']=defun['dates']
+defun['Fecha']=pd.to_datetime(defun['Fecha']).dt.tz_localize(None)
+defun['Defunciones']=defun['deaths']
+defun=defun.drop(columns=['dates', 'deaths']) 
+       
+
+for i in range(1,17):
+    if i==1:
+        defun_covid=pd.read_json('http://192.168.2.223:5006/getDeathsByState?state='+str(i), orient='columns')
+        defun_covid['Defunciones']=defun_covid.confirmed+defun_covid.suspected
+        defun_covid['Codigo region']=i
+        reg=reg_info.description[reg_info.id==i].values[0]
+        defun_covid['Region']=reg
+    else:
+        defun_tmp=pd.read_json('http://192.168.2.223:5006/getDeathsByState?state='+str(i), orient='columns')
+        defun_tmp['Defunciones']=defun_tmp.confirmed+defun_tmp.suspected
+        defun_tmp['Codigo region']=i
+        reg=reg_info.description[reg_info.id==i].values[0]
+        defun_tmp['Region']=reg
+        defun_covid=defun_covid.append(defun_tmp)
+
+defun_covid['Fecha']=defun_covid['dates']
+defun_covid['Fecha']=pd.to_datetime(defun_covid['Fecha']).dt.tz_localize(None)
+defun_covid=defun_covid.drop(columns=['dates', 'confirmed', 'suspected'])
 
 
-defun_covid['año']=pd.DatetimeIndex(defun_covid['Fecha']).year
-defun_covid['mes-año']=pd.to_datetime(defun_covid['Fecha']).dt.to_period('M')
-defun_covid['semana-mes-año']=pd.to_datetime(defun_covid['Fecha']).dt.to_period('W')
 
 
 # Defunciones por periodo anual y mensual
 defun['año']=pd.DatetimeIndex(defun['Fecha']).year
 defun['mes-año']=pd.to_datetime(defun['Fecha']).dt.to_period('M')
 defun['semana-mes-año']=pd.to_datetime(defun['Fecha']).dt.to_period('W')
+
+defun_covid['año']=pd.DatetimeIndex(defun_covid['Fecha']).year
+defun_covid['mes-año']=pd.to_datetime(defun_covid['Fecha']).dt.to_period('M')
+defun_covid['semana-mes-año']=pd.to_datetime(defun_covid['Fecha']).dt.to_period('W')
+
+
 
 # Calce de fechas
 max_date=min([max(defun['Fecha']),max(defun_covid['Fecha'])])
@@ -47,6 +74,7 @@ defun_covid=defun_covid[defun_covid['Fecha']<=max_date]
 defun_year=defun.groupby(['Codigo region','año']).sum()
 
 # Plot y modelo de defunciones anuales por región
+
 models=[]
 
 for i in range(16):
@@ -54,10 +82,11 @@ for i in range(16):
     x=range(2019,2009,-1)
     y=defun_year.iloc[
         defun_year.index.get_level_values('Codigo region')== i+1].values[
-            range(9,-1,-1),1]
+            range(9,-1,-1)].flatten()
    
     mymodel = np.poly1d(np.polyfit(x, y, 1))
     models.extend([[mymodel,i+1]])
+
 
 ## Proyeccion de aumetno de población semanales por región
 
@@ -112,13 +141,12 @@ for i in range(16):
     y_covid=np.array(defun_covid_week.iloc[np.logical_and(defun_covid_week.index.get_level_values('año') == 2020,
                                 defun_covid_week.index.get_level_values('Codigo region') == i+1)]['Defunciones'])
     y_covid=np.insert(y_covid, 0, np.zeros(len(np.setdiff1d(x, x_covid))))
-
+    
     tmp_excess=np.array([x,y_2020,y_covid,y,y_2020-y_covid,y_2020-y_covid-y,y_2s,y_1s,y_1sm,y_2sm]).transpose()
-    tmp_excess=pd.DataFrame(data=tmp_excess,columns=['Semana','Defunciones_2020',
-                                                      'Defunciones_Covid','Media_2020',
-                                                     'Defunciones_no_Covid','Defunsiones_media','2S','1S','-1S','-2S'])
-    tmp_excess['Codigo_region']=i+1
-    tmp_excess['Region']=np.unique(defun_covid[defun_covid['Codigo region']==i+1]['Region'])[0]
+    tmp_excess=pd.DataFrame(data=tmp_excess,columns=['semana','defunciones_totales',
+                                                  'defunciones_covid','media',
+                                                  'defunciones_no_covid','exceso_media','exceso_2S','exceso_1S','exceso_minus1S','exceso_minus2S'])
+    tmp_excess['region']=str(i+1).zfill(2)
     excess_dead=excess_dead.append(tmp_excess)
 
-excess_dead.to_csv("Excces_dead_reg_weekly.csv",index=False)
+excess_dead.to_csv("excess_dead_reg_weekly.csv",index=False)

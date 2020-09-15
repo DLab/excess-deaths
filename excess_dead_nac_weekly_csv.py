@@ -4,39 +4,60 @@ Created on Thu Jun  4 10:30:34 2020
 
 @author: pmaldonadol
 """
-import requests
+
 import pandas as pd
-import io
 import numpy as np
 
-
-
 # Se obtienen las defunciones desde url y se transforman a dataframe
-defun = requests.get('https://github.com/MinCiencia/Datos-COVID19/raw/master/output/producto32/Defunciones_std.csv').content
-defun = pd.read_csv(io.StringIO(defun.decode('utf-8')))
+
+reg_info=pd.read_json('http://192.168.2.223:5006/getStates', orient='columns')
+defun_data=pd.read_json('http://192.168.2.223:5006/getAllDeathsAllStates', orient='slit')
+
+for i in range(len(defun_data)):
+    if i==0: 
+        defun=pd.DataFrame(defun_data.iloc[i].values[0])
+        defun['Codigo region']=i+1
+        reg=reg_info.description[reg_info.id==i+1].values[0]
+        defun['Region']=reg
+    else:
+        defun_tmp=pd.DataFrame(defun_data.iloc[i].values[0])
+        defun_tmp['Codigo region']=i+1
+        reg=reg_info.description[reg_info.id==i+1].values[0]
+        defun_tmp['Region']=reg
+        defun=defun.append(defun_tmp)
+
+defun['Fecha']=defun['dates']
+defun['Fecha']=pd.to_datetime(defun['Fecha']).dt.tz_localize(None)
+defun['Defunciones']=defun['deaths']
+defun=defun.drop(columns=['dates', 'deaths']) 
+       
+
+for i in range(1,17):
+    if i==1:
+        defun_covid_N=pd.read_json('http://192.168.2.223:5006/getDeathsByState?state='+str(i), orient='columns')
+        defun_covid_N['Defunciones']=defun_covid_N.confirmed+defun_covid_N.suspected
+        defun_covid_N['Codigo region']=i
+        reg=reg_info.description[reg_info.id==i].values[0]
+        defun_covid_N['Region']=reg
+    else:
+        defun_tmp=pd.read_json('http://192.168.2.223:5006/getDeathsByState?state='+str(i), orient='columns')
+        defun_tmp['Defunciones']=defun_tmp.confirmed+defun_tmp.suspected
+        defun_tmp['Codigo region']=i
+        reg=reg_info.description[reg_info.id==i].values[0]
+        defun_tmp['Region']=reg
+        defun_covid_N=defun_covid_N.append(defun_tmp)
+
+defun_covid_N['Fecha']=defun_covid_N['dates']
+defun_covid_N['Fecha']=pd.to_datetime(defun_covid_N['Fecha']).dt.tz_localize(None)
+defun_covid_N=defun_covid_N.drop(columns=['dates', 'confirmed', 'suspected'])
+
+
 
 # Defunciones por periodo anual y mensual
 defun['año']=pd.DatetimeIndex(defun['Fecha']).year
 defun['mes-año']=pd.to_datetime(defun['Fecha']).dt.to_period('M')
 defun['semana-mes-año']=pd.to_datetime(defun['Fecha']).dt.to_period('W')
 
-# Se obtienen las defunciones covid nacionales desde url y se transforman a dataframe
-# defun_covid_N = requests.get('https://raw.githubusercontent.com/MinCiencia/Datos-COVID19/master/output/producto5/TotalesNacionales_std.csv').content
-# defun_covid_N = pd.read_csv(io.StringIO(defun_covid_N.decode('utf-8')),delimiter=",")
-
-# defun_covid_N = requests.get('https://raw.githubusercontent.com/MinCiencia/Datos-COVID19/master/output/producto14/FallecidosCumulativo_std.csv').content
-# defun_covid_N = pd.read_csv(io.StringIO(defun_covid_N.decode('utf-8')),delimiter=",")
-
-defun_covid_N = requests.get('https://raw.githubusercontent.com/MinCiencia/Datos-COVID19/master/output/producto50/DefuncionesDEISPorComuna_std.csv').content
-defun_covid_N = pd.read_csv(io.StringIO(defun_covid_N.decode('utf-8')))
-
-defun_covid_N=defun_covid_N.groupby(by=['Fecha']).sum()
-defun_covid_N=defun_covid_N.drop(['Codigo region', 'Codigo comuna', 'Poblacion'],axis=1)
-defun_covid_N.reset_index(level=0, inplace=True)
-# defun_covid_N = defun_covid_N[defun_covid_N.Dato=='Fallecidos']
-# defun_covid_N = defun_covid_N[defun_covid_N.Region=='Total']
-# d_covid=np.diff(defun_covid_N['Total'])
-# defun_covid_N['Defunciones']=np.insert(d_covid,0,1)
 defun_covid_N['año']=pd.DatetimeIndex(defun_covid_N['Fecha']).year
 defun_covid_N['mes-año']=pd.to_datetime(defun_covid_N['Fecha']).dt.to_period('M')
 defun_covid_N['semana-mes-año']=pd.to_datetime(defun_covid_N['Fecha']).dt.to_period('W')
@@ -102,14 +123,10 @@ y_covid=np.insert(y_covid, 0, np.zeros(len(np.setdiff1d(x, x_cov))))
 
 excess_dead=pd.DataFrame()
 tmp_excess=np.array([x,y_2020,y_covid,y,y_2020-y_covid,y_2020-y_covid-y,y_2s,y_1s,y_1sm,y_2sm]).transpose()
-tmp_excess=pd.DataFrame(data=tmp_excess,columns=['Semana','Defunciones_2020',
-                                                      'Defunciones_Covid','Media_2020',
-                                                      'Defunciones_no_Covid','Defunsiones_media','2S','1S','-1S','-2S'])
-tmp_excess['Codigo_region']=0
-tmp_excess['Region']='Nacional'
+tmp_excess=pd.DataFrame(data=tmp_excess,columns=['semana','defunciones_totales',
+                                                  'defunciones_covid','media',
+                                                  'defunciones_no_covid','exceso_media','exceso_2S','exceso_1S','exceso_minus1S','exceso_minus2S'])
+
 excess_dead=excess_dead.append(tmp_excess)
 
-# excess_dead.to_excel("Excces_dead_nac_weekly.xls")
-
-
-excess_dead.to_csv("Excces_dead_nac_weekly.csv")
+excess_dead.to_csv("excess_dead_nac_weekly.csv",index=False)
