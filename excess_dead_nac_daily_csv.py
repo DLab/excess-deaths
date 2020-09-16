@@ -29,8 +29,9 @@ for i in range(len(defun_data)):
 defun['Fecha']=defun['dates']
 defun['Fecha']=pd.to_datetime(defun['Fecha']).dt.tz_localize(None)
 defun['Defunciones']=defun['deaths']
-defun=defun.drop(columns=['dates', 'deaths']) 
-       
+defun=defun.groupby(['Fecha']).sum()
+defun=defun.drop(columns=['deaths','Codigo region']) 
+defun.reset_index(inplace=True)      
 
 for i in range(1,17):
     if i==1:
@@ -49,8 +50,9 @@ for i in range(1,17):
 
 defun_covid_N['Fecha']=defun_covid_N['dates']
 defun_covid_N['Fecha']=pd.to_datetime(defun_covid_N['Fecha']).dt.tz_localize(None)
-defun_covid_N=defun_covid_N.drop(columns=['dates', 'confirmed', 'suspected'])
-
+defun_covid_N=defun_covid_N.groupby(['Fecha',]).sum()
+defun_covid_N=defun_covid_N.drop(columns=['confirmed', 'suspected','Codigo region'])
+defun_covid_N.reset_index(inplace=True)
 
 
 # Defunciones por periodo anual y mensual
